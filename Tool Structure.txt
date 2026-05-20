@@ -1,0 +1,22 @@
+vuln-scanner/
+├── scanner.py                 # Updated main entry point
+├── setup.sh                   # Updated installer
+├── requirements.txt
+├── README.md
+├── payloads/
+│   ├── xss.txt
+│   ├── sqli.txt
+│   ├── cmdi.txt               # NEW - Command injection payloads
+│   └── lfi.txt                # NEW - Local file inclusion payloads
+├── modules/
+│   ├── __init__.py
+│   ├── xss_scanner.py
+│   ├── sqli_scanner.py
+│   ├── recon.py
+│   ├── reporter.py
+│   ├── cmdi_scanner.py        # NEW - Command injection
+│   ├── lfi_scanner.py         # NEW - LFI/RFI
+│   ├── exposed_scanner.py     # NEW - .git, backups, sensitive files
+│   └── jwt_scanner.py         # NEW - JWT token analysis
+└── wordlists/
+    └── sensitive_files.txt    # NEW - Paths to check for exposure

