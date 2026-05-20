@@ -9,3 +9,5 @@
 | Exposed Files | `--exposed` | .git, .env, backups, configs, shells, logs, 200+ paths |
 | JWT | `--jwt` | Weak secret, alg=none, KID injection, JWK/JKU, Sensitive data |
 | Recon | `--recon` | Subdomains (subfinder/crt.sh), Tech detection, WAF detection
+# VULN-SCANNER
+Modular vulnerability scanner for Kali Linux with CMDi, JWT, LFI and exposed file detection modules.
