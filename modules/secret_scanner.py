@@ -24,17 +24,14 @@ class SecretScanner:
         js_urls = set()
         soup = BeautifulSoup(html, 'html.parser')
         
-        # Script tags
         for script in soup.find_all('script'):
             src = script.get('src')
             if src:
                 full_url = urljoin(base_url, src)
                 js_urls.add(full_url)
         
-        # Inline scripts with dynamic loading patterns
         for script in soup.find_all('script'):
             if script.string:
-                # Find URLs in inline JS
                 js_urls_inline = re.findall(r'(?:src|url|href)=["\']([^"\']+\.js[^"\']*)["\']', script.string)
                 for url in js_urls_inline:
                     full_url = urljoin(base_url, url)
@@ -50,11 +47,11 @@ class SecretScanner:
     # Comprehensive secret patterns
     SECRET_PATTERNS = {
         'AWS Access Key': r'AKIA[0-9A-Z]{16}',
-        'AWS Secret Key': r'(?i)aws(.{0,20})?(?-i)['\"][0-9a-zA-Z\/+]{40}['\"]',
+        'AWS Secret Key': r"(?i)aws(.{0,20})?(?-i)['\"][0-9a-zA-Z\/+]{40}['\"]",
         'Google API Key': r'AIza[0-9A-Za-z\-_]{35}',
         'Google OAuth Key': r'[0-9]+-[0-9A-Za-z_]{32}\.apps\.googleusercontent\.com',
         'Firebase URL': r'[^"\'\s]+\.firebaseio\.com[^"\'\s]*',
-        'Firebase API Key': r'(?i)firebase.*?api[Kk]ey["\'\s=:]+["\']([^"\']+)["\']',
+        'Firebase API Key': r"(?i)firebase.*?api[Kk]ey[\"'\s=:]+[\"']([^\"']+)[\"']",
         'GitHub Token': r'(?i)gh[pousr]_[A-Za-z0-9_]{36,}',
         'GitHub Old Token': r'[0-9a-f]{40}(?![0-9a-f])',
         'GitLab Token': r'glpat-[0-9a-zA-Z\-_]{20,}',
@@ -65,7 +62,7 @@ class SecretScanner:
         'JWT Token': r'eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}',
         'JWT in Code': r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}',
         'Private Key': r'-----BEGIN (RSA |EC )?PRIVATE KEY-----',
-        'Heroku API Key': r'[hH][eE][rR][oO][kK][uU].*?[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}',
+        'Heroku API Key': r"[hH][eE][rR][oO][kK][uU].*?[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}",
         'Mailgun API Key': r'key-[0-9a-f]{32}',
         'Twilio API Key': r'SK[0-9a-fA-F]{32}',
         'SendGrid API Key': r'SG\.[0-9A-Za-z\-_]{22}\.[0-9A-Za-z\-_]{43}',
@@ -74,9 +71,9 @@ class SecretScanner:
         'Square Access Token': r'sq0atp-[0-9A-Za-z\-_]{22}',
         'Square OAuth Secret': r'sq0csp-[0-9A-Za-z\-_]{43}',
         'Facebook App Secret': r'[0-9a-f]{32}(?![0-9a-f])',
-        'Twitter API Key': r'(?i)twitter.*?api[kK]ey["\'\s=:]+["\']?([0-9a-zA-Z]{18,25})["\']?',
-        'Twitter API Secret': r'(?i)twitter.*?api[Ss]ecret["\'\s=:]+["\']?([0-9a-zA-Z]{35,50})["\']?',
-        'Generic API Key': r'(?i)(?:api[_-]?key|apikey|api[_-]?secret|apiSecret)\s*[:=]\s*["\'][A-Za-z0-9_\-]{16,}["\']',
+        'Twitter API Key': r"(?i)twitter.*?api[kK]ey[\"'\s=:]+[\"']?([0-9a-zA-Z]{18,25})[\"']?",
+        'Twitter API Secret': r"(?i)twitter.*?api[Ss]ecret[\"'\s=:]+[\"']?([0-9a-zA-Z]{35,50})[\"']?",
+        'Generic API Key': r"(?i)(?:api[_-]?key|apikey|api[_-]?secret|apiSecret)\s*[:=]\s*[\"'][A-Za-z0-9_\-]{16,}[\"']",
         'Password in Code': r'(?i)(?:password|passwd|pwd)\s*[:=]\s*["\'][^"\']{4,}["\']',
         'Database URL': r'(?i)(?:mysql|postgres|mongodb|redis|elasticsearch)://[^\s"\']+',
         'MongoDB Connection String': r'mongodb(?:\+srv)?://[^\s"\']+',
@@ -88,8 +85,8 @@ class SecretScanner:
         'SonarQube Token': r'squ_[0-9a-f]{40}',
         'GCP Access Token': r'ya29\.[0-9A-Za-z\-_]+',
         'Azure Storage Key': r'DefaultEndpointsProtocol=https;AccountName=[^;]+;AccountKey=[^;]+',
-        'NuGet API Key': r'(?i)nuget.*?api[kK]ey["\'\s=:]+["\']?([0-9a-f]{32})["\']?',
-        'Docker Hub Password': r'(?i)docker.*?password["\'\s=:]+["\']?([^"\']+)["\']?',
+        'NuGet API Key': r"(?i)nuget.*?api[kK]ey[\"'\s=:]+[\"']?([0-9a-f]{32})[\"']?",
+        'Docker Hub Password': r"(?i)docker.*?password[\"'\s=:]+[\"']?([^\"']+)[\"']?",
         'NPM Token': r'npm_[A-Za-z0-9]{36}',
         'Pypi Token': r'pypi-[A-Za-z0-9]{40}',
         'Jenkins API Token': r'[0-9a-f]{32}',
@@ -101,7 +98,6 @@ class SecretScanner:
         for secret_type, pattern in self.SECRET_PATTERNS.items():
             matches = re.findall(pattern, text)
             for match in matches:
-                # Filter out false positives (test values, example.com, etc.)
                 if self.is_false_positive(match, secret_type):
                     continue
                     
@@ -113,13 +109,12 @@ class SecretScanner:
                     'context': context[:100] if context else '',
                     'remediation': f'Rotate the exposed {secret_type} immediately and remove from source code/files'
                 })
-                return  # One finding per type per file
+                return
     
     def is_false_positive(self, match, secret_type):
         """Filter out common false positives"""
         match_str = str(match).lower()
         
-        # Skip example/placeholder values
         false_positives = [
             'example', 'placeholder', 'your_', 'xxx', 'test', 'changeme',
             '123456', 'deadbeef', '000000', 'aaaaaa', 'abcdef',
@@ -130,7 +125,6 @@ class SecretScanner:
             if fp in match_str:
                 return True
         
-        # Skip very short matches (usually not real secrets)
         if len(match_str) < 10:
             return True
         
@@ -147,11 +141,9 @@ class SecretScanner:
             print(f"    [!] Error fetching target: {e}")
             return self.results
         
-        # 1. Scan the main page HTML
         print("    [*] Scanning main page...")
         self.scan_text_for_secrets(html, self.url, 'Main page HTML')
         
-        # 2. Extract and scan JavaScript files
         print("    [*] Extracting JavaScript files...")
         js_urls = self.extract_js_urls(html, self.url)
         sourcemaps = self.extract_sourcemap_urls(html)
@@ -159,7 +151,7 @@ class SecretScanner:
         all_js = js_urls + sourcemaps
         print(f"    [*] Found {len(js_urls)} JS files, {len(sourcemaps)} sourcemaps")
         
-        for js_url in all_js[:20]:  # Limit to first 20
+        for js_url in all_js[:20]:
             try:
                 js_response = self.session.get(js_url, timeout=10)
                 print(f"    [*] Scanning: {js_url.split('/')[-1][:40]} ({len(js_response.content)} bytes)")
@@ -167,7 +159,6 @@ class SecretScanner:
             except Exception:
                 continue
         
-        # 3. Check common config files for secrets
         config_files = [
             '/.env', '/.env.example', '/.env.production', '/.env.local',
             '/config.js', '/config.json', '/app.config.js',
@@ -187,10 +178,9 @@ class SecretScanner:
             except:
                 continue
         
-        # Print summary
         if self.results:
             print(f"\n    [!] Found {len(self.results)} exposed secrets/keys:")
-            for secret in self.results[:10]:  # Show first 10
+            for secret in self.results[:10]:
                 print(f"    🔑 [{secret['secret_type']}] at {secret['url'][:70]}")
                 print(f"       {secret['evidence'][:80]}")
             if len(self.results) > 10:

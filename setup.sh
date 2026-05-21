@@ -19,7 +19,25 @@ echo "[+] Updating package lists..."
 apt-get update -qq
 
 echo "[+] Installing Python dependencies..."
-pip3 install -r requirements.txt 2>/dev/null || pip install -r requirements.txt
+# Kali uses externally-managed Python environments - use pipx or venv
+if command -v pipx &> /dev/null; then
+    echo "[*] Using pipx for Python package installation..."
+    pipx install -r requirements.txt 2>/dev/null || \
+    echo "    [!] pipx install failed, trying alternative method..."
+fi
+
+# Fallback: create a virtual environment
+echo "[*] Creating Python virtual environment..."
+python3 -m venv venv 2>/dev/null
+if [ -f "venv/bin/pip" ]; then
+    echo "[*] Installing packages in virtual environment..."
+    venv/bin/pip install -r requirements.txt -q 2>/dev/null
+    echo "[+] Virtual environment ready. Use: source venv/bin/activate"
+else
+    echo "[!] venv creation failed. Trying pip with --break-system-packages..."
+    pip3 install -r requirements.txt --break-system-packages -q 2>/dev/null || \
+    echo "    [!] Install failed. Run: pip3 install -r requirements.txt --break-system-packages"
+fi
 
 echo "[+] Installing/updating Kali tools..."
 KALI_TOOLS=(
