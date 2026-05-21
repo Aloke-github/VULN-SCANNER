@@ -35,24 +35,21 @@ class JWTScanner:
             if len(parts) != 3:
                 return None, None, None
             
-            # Decode header
             header_padded = parts[0] + '=' * (4 - len(parts[0]) % 4)
             try:
                 header = json.loads(base64.urlsafe_b64decode(header_padded))
             except:
                 header = json.loads(base64.b64decode(parts[0] + '=='))
             
-            # Decode payload
             payload_padded = parts[1] + '=' * (4 - len(parts[1]) % 4)
             try:
                 payload = json.loads(base64.urlsafe_b64decode(payload_padded))
             except:
                 payload = json.loads(base64.b64decode(parts[1] + '=='))
             
-            signature = parts[2]
-            return header, payload, signature
+            return header, payload, parts[2]
             
-        except Exception as e:
+        except Exception:
             return None, None, None
     
     def analyze_jwt(self, token, source):
@@ -62,10 +59,9 @@ class JWTScanner:
         if not header or not payload:
             return
         
-        # Store found token info (truncate sensitive values)
         sanitized_payload = {}
         for k, v in payload.items():
-            if k.lower() in ['password', 'secret', 'token', 'key', 'pin', 'cvv']:
+            if k.lower() in ['password', 'secret', 'token', 'key', 'pin', 'cvv', 'credit_card']:
                 sanitized_payload[k] = '***REDACTED***'
             else:
                 sanitized_payload[k] = v
@@ -116,7 +112,7 @@ class JWTScanner:
                 except:
                     pass
         
-        # 3. Check algorithm confusion (RS256 vs HS256)
+        # 3. Check algorithm confusion
         if alg == 'rs256':
             issues.append({
                 'issue': 'Algorithm confusion potential (RS256)',
@@ -134,10 +130,10 @@ class JWTScanner:
                     'issue': f'Sensitive data in JWT payload: "{key}"',
                     'severity': 'High',
                     'detail': f'JWT payload contains potentially sensitive field: {key}',
-                    'remediation': 'Never store sensitive data in JWT payload (it is only base64 encoded, not encrypted)'
+                    'remediation': 'Never store sensitive data in JWT payload'
                 })
         
-        # 5. Check for expired token or no expiration
+        # 5. Check for no expiration
         if 'exp' not in payload:
             issues.append({
                 'issue': 'JWT has no expiration (exp) claim',
@@ -146,7 +142,7 @@ class JWTScanner:
                 'remediation': 'Always include exp claim with reasonable expiry time'
             })
         
-        # 6. Check for "kid" header injection
+        # 6. Check kid header
         if 'kid' in header:
             kid_value = str(header['kid'])
             if '../' in kid_value or '..\\' in kid_value:
@@ -154,7 +150,7 @@ class JWTScanner:
                     'issue': 'Potential kid path traversal',
                     'severity': 'High',
                     'detail': f'kid header contains path traversal: {kid_value}',
-                    'remediation': 'Validate and sanitize kid header, do not use file paths'
+                    'remediation': 'Validate and sanitize kid header'
                 })
             if kid_value.startswith('/'):
                 issues.append({
@@ -164,7 +160,7 @@ class JWTScanner:
                     'remediation': 'Restrict kid to predefined keys only'
                 })
         
-        # 7. Check for jku header (JWK Set URL)
+        # 7. Check jku header
         if 'jku' in header:
             issues.append({
                 'issue': 'JKU header present - potential SSRF/Key injection',
@@ -173,7 +169,7 @@ class JWTScanner:
                 'remediation': 'Disable jku header or whitelist allowed URLs'
             })
         
-        # 8. Check for jwk embedded key
+        # 8. Check jwk embedded key
         if 'jwk' in header:
             issues.append({
                 'issue': 'JWK (embedded key) header present',
@@ -184,18 +180,18 @@ class JWTScanner:
         
         self.results['vulnerabilities'].extend(issues)
     
-    def find_tokens_in_response_text(self, response_text, source):
-        """Find JWT tokens in a response body string"""
+    def find_tokens_in_body(self, body_text, source):
+        """Find JWT tokens in a plain text body (string)"""
         jwt_pattern = r'eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+'
-        tokens = re.findall(jwt_pattern, response_text)
+        tokens = re.findall(jwt_pattern, body_text)
         
         for token in tokens:
-            self.analyze_jwt(token, source)
+            self.analyze_jwt(token, f'{source} - Body')
     
-    def find_tokens_in_response_object(self, response, source):
+    def find_tokens_in_response(self, response, source):
         """Find JWT tokens in a full response object"""
-        # Check response body
-        self.find_tokens_in_response_text(response.text, f'{source} - Body')
+        # Check response body text
+        self.find_tokens_in_body(response.text, source)
         
         # Check Authorization header
         auth_header = response.headers.get('Authorization', '')
@@ -203,13 +199,14 @@ class JWTScanner:
             token = auth_header[7:]
             self.analyze_jwt(token, f'{source} - Authorization Header')
         
-        # Check Set-Cookie headers
+        # Check Set-Cookie headers for JWT patterns
         set_cookie = response.headers.get('Set-Cookie', '')
         if set_cookie:
             for cookie_part in set_cookie.split(';'):
                 if '=' in cookie_part:
                     key, val = cookie_part.strip().split('=', 1)
-                    if any(pattern in key.lower() for pattern in ['token', 'jwt', 'auth']):
+                    jwt_cookie_patterns = ['token', 'jwt', 'auth', 'access_token', 'bearer', 'session']
+                    if any(pattern in key.lower() for pattern in jwt_cookie_patterns):
                         if val.startswith('eyJ'):
                             self.analyze_jwt(val, f'{source} - Set-Cookie: {key}')
     
@@ -223,32 +220,35 @@ class JWTScanner:
             print(f"    [!] Error fetching target: {e}")
             return self.results
         
-        # Check response object for tokens
-        self.find_tokens_in_response_object(response, 'Main Page')
+        # Check response for tokens
+        self.find_tokens_in_response(response, 'Main Page')
         
-        # Check cookies from session
+        # Check auth endpoints
+        auth_endpoints = ['/api/auth', '/api/login', '/api/token', '/auth', '/login', 
+                         '/api/v1/auth', '/api/authenticate', '/api/me', '/api/user',
+                         '/rest/user/login']  # Juice Shop specific
+        
+        for endpoint in auth_endpoints:
+            try:
+                test_url = f"{self.url.rstrip('/')}{endpoint}"
+                auth_response = self.session.get(test_url, timeout=5)
+                self.find_tokens_in_response(auth_response, f'Auth Endpoint: {endpoint}')
+            except:
+                continue
+        
+        # Also check cookies from the session
         for cookie_name, cookie_value in self.session.cookies.items():
             jwt_cookie_patterns = ['token', 'jwt', 'access_token', 'auth', 'session', 'bearer']
             if any(pattern in cookie_name.lower() for pattern in jwt_cookie_patterns):
                 if cookie_value.startswith('eyJ'):
                     self.analyze_jwt(cookie_value, f'Cookie: {cookie_name}')
         
-        # Check for common authentication endpoints
-        auth_endpoints = ['/api/auth', '/api/login', '/api/token', '/auth', '/login', 
-                         '/api/v1/auth', '/api/authenticate', '/api/me', '/api/user']
-        for endpoint in auth_endpoints:
-            try:
-                test_url = f"{self.url.rstrip('/')}{endpoint}"
-                auth_response = self.session.get(test_url, timeout=5)
-                self.find_tokens_in_response_object(auth_response, f'Auth Endpoint: {endpoint}')
-            except:
-                continue
-        
         if self.results['tokens_found']:
             print(f"    [!] Found {len(self.results['tokens_found'])} JWT token(s)")
             for vuln in self.results['vulnerabilities']:
-                severity_icon = {'Critical': '🚨', 'High': '🔥', 'Medium': '⚠️'}
+                severity_icon = {'Critical': '🚨', 'High': '🔥', 'Medium': '⚠️', 'Low': '🔍'}
                 print(f"    {severity_icon.get(vuln['severity'], 'ℹ️')} [{vuln['severity']}] {vuln['issue']}")
+                print(f"       {vuln.get('detail', '')[:100]}")
         else:
             print("    [+] No JWT tokens detected")
         
