@@ -44,14 +44,13 @@ class SecretScanner:
         sourcemaps = re.findall(r'sourceMappingURL=([^\s"\']+)', html)
         return [urljoin(self.url, sm) for sm in sourcemaps]
     
-    # Comprehensive secret patterns
     SECRET_PATTERNS = {
         'AWS Access Key': r'AKIA[0-9A-Z]{16}',
-        'AWS Secret Key': r"(?i)aws(.{0,20})?(?-i)['\"][0-9a-zA-Z\/+]{40}['\"]",
+        'AWS Secret Key': r"(?i)aws(.{0,20})?['\"][0-9a-zA-Z\/+]{40}['\"]",
         'Google API Key': r'AIza[0-9A-Za-z\-_]{35}',
         'Google OAuth Key': r'[0-9]+-[0-9A-Za-z_]{32}\.apps\.googleusercontent\.com',
         'Firebase URL': r'[^"\'\s]+\.firebaseio\.com[^"\'\s]*',
-        'Firebase API Key': r"(?i)firebase.*?api[Kk]ey[\"'\s=:]+[\"']([^\"']+)[\"']",
+        'Firebase API Key': r"(?i)firebase.*?api[kK]ey[\"'\s=:]+[\"']([^\"']+)[\"']",
         'GitHub Token': r'(?i)gh[pousr]_[A-Za-z0-9_]{36,}',
         'GitHub Old Token': r'[0-9a-f]{40}(?![0-9a-f])',
         'GitLab Token': r'glpat-[0-9a-zA-Z\-_]{20,}',
@@ -96,7 +95,11 @@ class SecretScanner:
     def scan_text_for_secrets(self, text, source_url, context=''):
         """Scan text content for secrets"""
         for secret_type, pattern in self.SECRET_PATTERNS.items():
-            matches = re.findall(pattern, text)
+            try:
+                matches = re.findall(pattern, text)
+            except re.error as e:
+                print(f"    [!] Regex error in {secret_type}: {e} - skipping")
+                continue
             for match in matches:
                 if self.is_false_positive(match, secret_type):
                     continue
@@ -181,7 +184,7 @@ class SecretScanner:
         if self.results:
             print(f"\n    [!] Found {len(self.results)} exposed secrets/keys:")
             for secret in self.results[:10]:
-                print(f"    🔑 [{secret['secret_type']}] at {secret['url'][:70]}")
+                print(f"    [{secret['secret_type']}] at {secret['url'][:70]}")
                 print(f"       {secret['evidence'][:80]}")
             if len(self.results) > 10:
                 print(f"       ... and {len(self.results) - 10} more")
