@@ -50,7 +50,6 @@ class JWTScanner:
                 payload = json.loads(base64.b64decode(parts[1] + '=='))
             
             signature = parts[2]
-            
             return header, payload, signature
             
         except Exception as e:
@@ -63,11 +62,19 @@ class JWTScanner:
         if not header or not payload:
             return
         
+        # Store found token info (truncate sensitive values)
+        sanitized_payload = {}
+        for k, v in payload.items():
+            if k.lower() in ['password', 'secret', 'token', 'key', 'pin', 'cvv']:
+                sanitized_payload[k] = '***REDACTED***'
+            else:
+                sanitized_payload[k] = v
+        
         self.results['tokens_found'].append({
             'token': token[:80] + '...',
             'source': source,
             'header': header,
-            'payload': {k: v for k, v in payload.items() if k != 'password'}  # Don't log passwords
+            'payload': sanitized_payload
         })
         
         issues = []
@@ -82,16 +89,21 @@ class JWTScanner:
                 'remediation': 'Reject tokens with alg: none'
             })
         
-        # 2. Check for weak algorithm
-        if alg == 'hs256':
-            # Check if secret is weak
+        # 2. Check for weak algorithm and try common secrets
+        if alg in ['hs256', 'hs384', 'hs512']:
             common_secrets = ['secret', 'password', 'key', '123456', 'admin', 
-                            'changeme', 'test', 'jwt_secret', 'mysecret']
+                            'changeme', 'test', 'jwt_secret', 'mysecret', 
+                            'supersecret', 'pass', '12345', 'abc123']
             for secret in common_secrets:
                 try:
-                    # Try to verify with common secret
-                    msg = f"{token.rsplit('.', 1)[0]}"
-                    sig = hmac.new(secret.encode(), msg.encode(), hashlib.sha256).digest()
+                    msg = token.rsplit('.', 1)[0]
+                    if alg == 'hs256':
+                        sig = hmac.new(secret.encode(), msg.encode(), hashlib.sha256).digest()
+                    elif alg == 'hs384':
+                        sig = hmac.new(secret.encode(), msg.encode(), hashlib.sha384).digest()
+                    else:
+                        sig = hmac.new(secret.encode(), msg.encode(), hashlib.sha512).digest()
+                    
                     expected_sig = base64.urlsafe_b64encode(sig).rstrip(b'=').decode()
                     if expected_sig == token.rsplit('.', 1)[1]:
                         issues.append({
@@ -115,7 +127,7 @@ class JWTScanner:
         
         # 4. Check for sensitive info in payload
         sensitive_keys = ['password', 'secret', 'token', 'api_key', 'apikey', 
-                         'credit_card', 'ssn', 'dob', 'pin', 'cvv']
+                         'credit_card', 'ssn', 'dob', 'pin', 'cvv', 'private']
         for key in sensitive_keys:
             if key in payload or any(key in str(k).lower() for k in payload.keys()):
                 issues.append({
@@ -136,8 +148,8 @@ class JWTScanner:
         
         # 6. Check for "kid" header injection
         if 'kid' in header:
-            kid_value = header['kid']
-            if '../' in str(kid_value) or '..\\' in str(kid_value):
+            kid_value = str(header['kid'])
+            if '../' in kid_value or '..\\' in kid_value:
                 issues.append({
                     'issue': 'Potential kid path traversal',
                     'severity': 'High',
@@ -170,27 +182,36 @@ class JWTScanner:
                 'remediation': 'Disable jwk header support'
             })
         
-        # 9. Check iat (issued at) in the future
-        if 'iat' in payload:
-            # This is a rough check - we can't know the server's clock
-            pass
-        
         self.results['vulnerabilities'].extend(issues)
     
-    def find_tokens_in_response(self, response, source):
-        """Find JWT tokens in HTTP responses"""
-        # Pattern for JWT (eyJ... for base64 encoded JSON)
+    def find_tokens_in_response_text(self, response_text, source):
+        """Find JWT tokens in a response body string"""
         jwt_pattern = r'eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+'
-        tokens = re.findall(jwt_pattern, response)
+        tokens = re.findall(jwt_pattern, response_text)
         
         for token in tokens:
             self.analyze_jwt(token, source)
+    
+    def find_tokens_in_response_object(self, response, source):
+        """Find JWT tokens in a full response object"""
+        # Check response body
+        self.find_tokens_in_response_text(response.text, f'{source} - Body')
         
-        # Also check for Authorization header
+        # Check Authorization header
         auth_header = response.headers.get('Authorization', '')
         if auth_header.startswith('Bearer '):
             token = auth_header[7:]
-            self.analyze_jwt(token, 'Authorization Header')
+            self.analyze_jwt(token, f'{source} - Authorization Header')
+        
+        # Check Set-Cookie headers
+        set_cookie = response.headers.get('Set-Cookie', '')
+        if set_cookie:
+            for cookie_part in set_cookie.split(';'):
+                if '=' in cookie_part:
+                    key, val = cookie_part.strip().split('=', 1)
+                    if any(pattern in key.lower() for pattern in ['token', 'jwt', 'auth']):
+                        if val.startswith('eyJ'):
+                            self.analyze_jwt(val, f'{source} - Set-Cookie: {key}')
     
     def scan(self):
         """Main JWT scan"""
@@ -202,24 +223,24 @@ class JWTScanner:
             print(f"    [!] Error fetching target: {e}")
             return self.results
         
-        # Check response for tokens
-        self.find_tokens_in_response(response.text, 'Response Body')
+        # Check response object for tokens
+        self.find_tokens_in_response_object(response, 'Main Page')
         
-        # Check cookies
+        # Check cookies from session
         for cookie_name, cookie_value in self.session.cookies.items():
-            # Common JWT cookie names
             jwt_cookie_patterns = ['token', 'jwt', 'access_token', 'auth', 'session', 'bearer']
             if any(pattern in cookie_name.lower() for pattern in jwt_cookie_patterns):
                 if cookie_value.startswith('eyJ'):
                     self.analyze_jwt(cookie_value, f'Cookie: {cookie_name}')
         
         # Check for common authentication endpoints
-        auth_endpoints = ['/api/auth', '/api/login', '/api/token', '/auth', '/login', '/api/v1/auth']
+        auth_endpoints = ['/api/auth', '/api/login', '/api/token', '/auth', '/login', 
+                         '/api/v1/auth', '/api/authenticate', '/api/me', '/api/user']
         for endpoint in auth_endpoints:
             try:
                 test_url = f"{self.url.rstrip('/')}{endpoint}"
                 auth_response = self.session.get(test_url, timeout=5)
-                self.find_tokens_in_response(auth_response.text, f'Auth Endpoint: {endpoint}')
+                self.find_tokens_in_response_object(auth_response, f'Auth Endpoint: {endpoint}')
             except:
                 continue
         
