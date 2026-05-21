@@ -2,7 +2,7 @@
 """
 Web Vulnerability Scanner CLI v2.0
 For authorized penetration testing only.
-Compatible with Windows 11
+Compatible with Kali Linux / Windows 11
 """
 
 import argparse
@@ -63,7 +63,20 @@ Examples:
     parser.add_argument('--timeout', type=int, default=10, help='Timeout in seconds')
     parser.add_argument('--no-banner', action='store_true', help='Suppress banner')
     
+    # Extended module flags
+    parser.add_argument('--api', action='store_true', help='API security testing (BOLA, rate limiting)')
+    parser.add_argument('--cors', action='store_true', help='CORS misconfiguration testing')
+    parser.add_argument('--ssrf', action='store_true', help='SSRF testing')
+    parser.add_argument('--secrets', action='store_true', help='Secret/key detection in JS/HTML')
+    parser.add_argument('--graphql', action='store_true', help='GraphQL security testing')
+    parser.add_argument('--headers', action='store_true', help='Security headers audit')
+    parser.add_argument('--ssti', action='store_true', help='SSTI testing')
+    parser.add_argument('--upload', action='store_true', help='File upload vulnerability testing')
+    parser.add_argument('--js', action='store_true', help='JavaScript endpoint/secret extraction')
+    parser.add_argument('--idor', action='store_true', help='IDOR testing')
+    
     return parser.parse_args()
+
 
 def load_urls(file_path):
     urls = []
@@ -81,14 +94,26 @@ def load_urls(file_path):
         sys.exit(1)
     return urls
 
+
 def setup_modules(args):
     if args.all:
-        return {'xss': True, 'sqli': True, 'cmdi': True, 'lfi': True, 
-                'exposed': True, 'jwt': True, 'recon': True}
+        return {
+            'xss': True, 'sqli': True, 'cmdi': True, 'lfi': True,
+            'exposed': True, 'jwt': True, 'recon': True,
+            'api': True, 'cors': True, 'ssrf': True, 'secrets': True,
+            'graphql': True, 'headers': True, 'ssti': True, 'upload': True,
+            'js': True, 'idor': True
+        }
     
-    modules = {'xss': args.xss, 'sqli': args.sqli, 'cmdi': args.cmdi,
-               'lfi': args.lfi, 'exposed': args.exposed, 'jwt': args.jwt,
-               'recon': args.recon}
+    modules = {
+        'xss': args.xss, 'sqli': args.sqli, 'cmdi': args.cmdi,
+        'lfi': args.lfi, 'exposed': args.exposed, 'jwt': args.jwt,
+        'recon': args.recon,
+        'api': args.api, 'cors': args.cors, 'ssrf': args.ssrf,
+        'secrets': args.secrets, 'graphql': args.graphql,
+        'headers': args.headers, 'ssti': args.ssti, 'upload': args.upload,
+        'js': args.js, 'idor': args.idor
+    }
     
     if not any(modules.values()):
         print("[*] No modules specified, enabling all")
@@ -96,6 +121,7 @@ def setup_modules(args):
             modules[key] = True
     
     return modules
+
 
 def scan_single_target(url, args, modules):
     results = {
@@ -151,12 +177,12 @@ def scan_single_target(url, args, modules):
         jwt_scanner = JWTScanner(url, args)
         results['jwt'] = jwt_scanner.scan()
     
+    # Extended modules
     if modules.get('api'):
         print("\n[🔌] Testing API Security...")
         from modules.api_scanner import APIScanner
         api_scanner = APIScanner(url, args)
         results['api'] = api_scanner.scan()
-    
     
     if modules.get('cors'):
         print("\n[🌐] Testing CORS Configuration...")
@@ -164,13 +190,11 @@ def scan_single_target(url, args, modules):
         cors_scanner = CORSScanner(url, args)
         results['cors'] = cors_scanner.scan()
     
-   
     if modules.get('ssrf'):
         print("\n[🌍] Testing SSRF...")
         from modules.ssrf_scanner import SSRFScanner
         ssrf_scanner = SSRFScanner(url, args)
         results['ssrf'] = ssrf_scanner.scan()
-    
     
     if modules.get('secrets'):
         print("\n[🔑] Scanning for Exposed Secrets...")
@@ -178,13 +202,11 @@ def scan_single_target(url, args, modules):
         secret_scanner = SecretScanner(url, args)
         results['secrets'] = secret_scanner.scan()
     
-    
     if modules.get('graphql'):
         print("\n[📊] Testing GraphQL...")
         from modules.graphql_scanner import GraphQLScanner
         graphql_scanner = GraphQLScanner(url, args)
         results['graphql'] = graphql_scanner.scan()
-    
     
     if modules.get('headers'):
         print("\n[🛡️] Checking Security Headers...")
@@ -192,13 +214,11 @@ def scan_single_target(url, args, modules):
         headers_scanner = HeadersScanner(url, args)
         results['headers'] = headers_scanner.scan()
     
-    
     if modules.get('ssti'):
         print("\n[📝] Testing SSTI...")
         from modules.ssti_scanner import SSTIScanner
         ssti_scanner = SSTIScanner(url, args)
         results['ssti'] = ssti_scanner.scan()
-    
     
     if modules.get('upload'):
         print("\n[📎] Testing File Upload...")
@@ -206,19 +226,18 @@ def scan_single_target(url, args, modules):
         upload_scanner = UploadScanner(url, args)
         results['upload'] = upload_scanner.scan()
     
-    
     if modules.get('js'):
         print("\n[📜] Analyzing JavaScript...")
         from modules.js_scanner import JSScanner
         js_scanner = JSScanner(url, args)
         results['js'] = js_scanner.scan()
     
-    
     if modules.get('idor'):
         print("\n[🎯] Testing IDOR...")
         from modules.idor_scanner import IDORScanner
         idor_scanner = IDORScanner(url, args)
         results['idor'] = idor_scanner.scan()
+    
     # Summary
     total = 0
     for vt in ['xss', 'sqli', 'cmdi', 'lfi']:
@@ -229,6 +248,7 @@ def scan_single_target(url, args, modules):
     results['summary']['medium'] = len(results['cmdi']) + len(results.get('lfi', []))
     
     return results
+
 
 def main():
     args = parse_args()
