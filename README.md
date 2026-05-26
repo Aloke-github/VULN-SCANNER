@@ -1,4 +1,4 @@
-# 🏮 ARABI KATHA VULNERABILITY SCANNER v3.0 #
+
 
 > **Scanner of the Thousand and One Vulnerabilities**  
 > 👤 **Author:** @alok.t.r
